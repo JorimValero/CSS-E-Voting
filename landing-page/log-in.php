@@ -13,12 +13,18 @@ if (!isset($_SESSION['csrf_token'])) {
 $error = '';
 $identifier = '';
 $loginSuccess = false;
+$nextPage = $_GET['next'] ?? '';
+if (!is_string($nextPage) || $nextPage !== 'vote.php') {
+	$nextPage = '';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	$postedIdentifier = $_POST['identifier'] ?? '';
 	$identifier = is_string($postedIdentifier) ? trim($postedIdentifier) : '';
 	$password = $_POST['password'] ?? '';
 	$csrfToken = $_POST['csrf_token'] ?? '';
+	$postedNextPage = $_POST['next'] ?? '';
+	$nextPage = is_string($postedNextPage) && $postedNextPage === 'vote.php' ? $postedNextPage : '';
 
 	if (!is_string($csrfToken) || !hash_equals($_SESSION['csrf_token'], $csrfToken)) {
 		$error = 'Your session expired. Reload the page and try again.';
@@ -50,6 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$_SESSION['voter_id'] = (int) $account['account_id'];
 			$_SESSION['voter_name'] = $account['fullname'];
 			$_SESSION['voter_role'] = 'voter';
+			if ($nextPage === 'vote.php') {
+				header('Location: vote.php');
+				exit;
+			}
 			$loginSuccess = true;
 		}
 
@@ -75,7 +85,7 @@ function escape(string $value): string
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-	<link rel="stylesheet" href="../front_end/style.css">
+	<link rel="stylesheet" href="../front_end/style.css?v=3">
 </head>
 <body class="auth-page">
 	<header class="site-header auth-header">
@@ -110,6 +120,7 @@ function escape(string $value): string
 			<?php else: ?>
 				<form class="auth-form" method="post" action="log-in.php">
 					<input type="hidden" name="csrf_token" value="<?= escape($_SESSION['csrf_token']) ?>">
+					<?php if ($nextPage === 'vote.php'): ?><input type="hidden" name="next" value="vote.php"><?php endif; ?>
 					<div class="auth-field">
 						<label for="identifier">Student ID, username, or email</label>
 						<input id="identifier" name="identifier" type="text" value="<?= escape($identifier) ?>" autocomplete="username" required>

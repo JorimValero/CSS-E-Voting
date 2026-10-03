@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../admin-auth-guard.php';
 require_once __DIR__ . '/../database/connect.php';
+require_once __DIR__ . '/../database/sync-election-statuses.php';
+syncElectionStatuses($conn);
 
 function escape(string $value): string
 {
@@ -19,8 +21,27 @@ $totals = [
 	'votes' => (int) $voteResult->fetch_assoc()['total'],
 ];
 
-$electionResult = $conn->query('SELECT election_name, start_date, end_date, status FROM elections ORDER BY election_id DESC LIMIT 1');
+$electionResult = $conn->query("SELECT election_id, election_name, start_date, end_date, status FROM elections WHERE status IN ('ongoing', 'scheduled') AND end_date > NOW() ORDER BY (status = 'ongoing') DESC, start_date ASC LIMIT 1");
 $currentElection = $electionResult->fetch_assoc() ?: null;
+$ongoingElection = $currentElection && $currentElection['status'] === 'ongoing' ? $currentElection : null;
+$ongoingCandidates = [];
+if ($ongoingElection) {
+	$electionId = (int) $ongoingElection['election_id'];
+	$candidateResultsQuery = $conn->prepare("
+		SELECT p.position_name, c.fullname, COUNT(v.vote_id) AS vote_count
+		FROM candidates c
+		INNER JOIN positions p ON p.position_id = c.position_id
+		LEFT JOIN vote_details vd ON vd.candidate_id = c.candidate_id AND vd.position_id = p.position_id
+		LEFT JOIN votes v ON v.vote_id = vd.vote_id AND v.election_id = c.election_id
+		WHERE c.election_id = ? AND c.status = 'active'
+		GROUP BY p.position_id, p.position_name, p.position_order, c.candidate_id, c.fullname
+		ORDER BY p.position_order, p.position_name, vote_count DESC, c.fullname
+	");
+	$candidateResultsQuery->bind_param('i', $electionId);
+	$candidateResultsQuery->execute();
+	$ongoingCandidates = $candidateResultsQuery->get_result()->fetch_all(MYSQLI_ASSOC);
+	$candidateResultsQuery->close();
+}
 $conn->close();
 
 $adminName = $_SESSION['account_name'] ?? 'Administrator';
@@ -37,7 +58,7 @@ $adminInitial = strtoupper(substr($adminName, 0, 1));
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-	<link rel="stylesheet" href="../front_end/style.css">
+	<link rel="stylesheet" href="../front_end/style.css?v=3">
 </head>
 <body class="admin-page">
 	<div class="admin-layout">
@@ -51,7 +72,14 @@ $adminInitial = strtoupper(substr($adminName, 0, 1));
 				<a class="admin-nav-link admin-nav-current" href="admin-landing-page.php"><i class="ti ti-layout-dashboard" aria-hidden="true"></i> Dashboard</a>
 				<a class="admin-nav-link" href="election-status.php"><i class="ti ti-calendar-event" aria-hidden="true"></i> Election overview</a>
 				<a class="admin-nav-link" href="add-candidates.php"><i class="ti ti-user-plus" aria-hidden="true"></i> Add candidates</a>
+				<a class="admin-nav-link" href="manage-voters.php"><i class="ti ti-users" aria-hidden="true"></i> Manage voters</a>
 			</nav>
+			<?php if ($ongoingElection): ?>
+				<div class="admin-sidebar-election">
+					<span>ONGOING ELECTION</span>
+					<a href="add-candidates.php?election_id=<?= (int) $ongoingElection['election_id'] ?>"><?= escape($ongoingElection['election_name']) ?></a>
+				</div>
+			<?php endif; ?>
 		</aside>
 
 		<div class="admin-main">
@@ -81,13 +109,27 @@ $adminInitial = strtoupper(substr($adminName, 0, 1));
 					<div class="admin-panel-heading"><div><p class="admin-eyebrow">SCHEDULE AND STATUS</p><h2>Election overview</h2></div><i class="ti ti-calendar-stats" aria-hidden="true"></i></div>
 					<?php if ($currentElection): ?>
 						<div class="admin-election-details">
-							<div><span class="admin-detail-label">LATEST ELECTION</span><h3><?= escape($currentElection['election_name']) ?></h3></div>
+							<div><span class="admin-detail-label"><?= $currentElection['status'] === 'ongoing' ? 'CURRENT ELECTION' : 'NEXT ELECTION' ?></span><h3><?= escape($currentElection['election_name']) ?></h3></div>
 							<span class="admin-election-status status-<?= escape($currentElection['status']) ?>"><span></span><?= escape(ucfirst($currentElection['status'])) ?></span>
 						</div>
 						<div class="admin-election-dates">
 							<p><span>Voting starts</span><strong><?= escape(date('M j, Y, g:i A', strtotime($currentElection['start_date']))) ?></strong></p>
 							<p><span>Voting ends</span><strong><?= escape(date('M j, Y, g:i A', strtotime($currentElection['end_date']))) ?></strong></p>
 						</div>
+						<?php if ($ongoingElection): ?>
+							<div class="admin-live-results">
+								<div class="admin-panel-heading"><div><p class="admin-eyebrow">LIVE TALLY · ADMIN ONLY</p><h2>Candidates and vote counts</h2></div></div>
+								<?php if ($ongoingCandidates): ?>
+									<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Position</th><th>Candidate</th><th>Votes</th></tr></thead><tbody>
+										<?php foreach ($ongoingCandidates as $candidate): ?>
+											<tr><td><?= escape($candidate['position_name']) ?></td><td><?= escape($candidate['fullname']) ?></td><td><?= number_format((int) $candidate['vote_count']) ?></td></tr>
+										<?php endforeach; ?>
+									</tbody></table></div>
+								<?php else: ?>
+									<p class="admin-list-empty">No active candidates have been added to this election yet.</p>
+								<?php endif; ?>
+							</div>
+						<?php endif; ?>
 					<?php else: ?>
 						<div class="admin-empty-election"><span><i class="ti ti-calendar-off" aria-hidden="true"></i></span><div><strong>No elections yet</strong><p>Create an election to see its schedule and status here.</p></div></div>
 					<?php endif; ?>

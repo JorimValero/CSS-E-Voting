@@ -9,6 +9,40 @@ if (isset($_GET['logout'])) {
 }
 
 $voterName = $_SESSION['voter_name'] ?? null;
+$currentElection = null;
+$homeCandidates = [];
+$homeDatabaseError = false;
+
+try {
+	require_once __DIR__ . '/../database/connect.php';
+	require_once __DIR__ . '/../database/sync-election-statuses.php';
+	syncElectionStatuses($conn);
+	$electionQuery = $conn->query("SELECT election_id, election_name, status FROM elections WHERE status IN ('ongoing', 'scheduled') AND end_date > NOW() ORDER BY (status = 'ongoing') DESC, start_date ASC LIMIT 1");
+	$currentElection = $electionQuery->fetch_assoc() ?: null;
+
+	if ($currentElection) {
+		$electionId = (int) $currentElection['election_id'];
+		$candidateQuery = $conn->prepare("
+			SELECT c.fullname, p.position_name
+			FROM candidates c
+			INNER JOIN positions p ON p.position_id = c.position_id
+			WHERE c.election_id = ? AND c.status = 'active'
+			ORDER BY p.position_order, p.position_name, c.fullname
+		");
+		$candidateQuery->bind_param('i', $electionId);
+		$candidateQuery->execute();
+		$homeCandidates = $candidateQuery->get_result()->fetch_all(MYSQLI_ASSOC);
+		$candidateQuery->close();
+	}
+
+	$conn->close();
+} catch (mysqli_sql_exception $exception) {
+	error_log('Home page election query error: ' . $exception->getMessage());
+	$homeDatabaseError = true;
+	if ($conn instanceof mysqli) {
+		$conn->close();
+	}
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -21,7 +55,7 @@ $voterName = $_SESSION['voter_name'] ?? null;
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-	<link rel="stylesheet" href="../front_end/style.css">
+	<link rel="stylesheet" href="../front_end/style.css?v=3">
 </head>
 <body>
 	<header class="site-header">
@@ -37,7 +71,7 @@ $voterName = $_SESSION['voter_name'] ?? null;
 			<a class="nav-link is-active" href="index.php">Home</a>
 			<a class="nav-link" href="#about">About</a>
 			<a class="nav-link" href="candidates.php">Candidates</a>
-			<a class="nav-link" href="#results">Results</a>
+			<a class="nav-link" href="results.php">Results</a>
 		</nav>
 
 		<div class="header-actions">
@@ -56,7 +90,7 @@ $voterName = $_SESSION['voter_name'] ?? null;
 				<a href="index.php">Home</a>
 				<a href="#about">About</a>
 				<a href="candidates.php">Candidates</a>
-				<a href="#results">Results</a>
+				<a href="results.php">Results</a>
 				<?php if ($voterName !== null): ?>
 					<a href="index.php?logout=1">Log out</a>
 				<?php else: ?>
@@ -123,13 +157,32 @@ $voterName = $_SESSION['voter_name'] ?? null;
 		<section class="election-links" aria-label="Election information">
 			<article id="candidates">
 				<span class="info-icon"><i class="ti ti-users" aria-hidden="true"></i></span>
-				<div><p class="eyebrow">MEET YOUR REPRESENTATIVES</p><h2>Candidate profiles</h2><p>Candidate information will be available when the election is announced.</p></div>
+				<div class="home-candidate-summary">
+					<p class="eyebrow">MEET YOUR REPRESENTATIVES</p>
+					<h2>Candidate profiles</h2>
+					<?php if ($homeDatabaseError): ?>
+						<p>Candidate information is temporarily unavailable.</p>
+					<?php elseif ($currentElection): ?>
+						<p class="home-election-name"><?= htmlspecialchars($currentElection['election_name'], ENT_QUOTES, 'UTF-8') ?> &middot; <?= htmlspecialchars(ucfirst($currentElection['status']), ENT_QUOTES, 'UTF-8') ?></p>
+						<?php if ($homeCandidates): ?>
+							<ul class="home-candidate-list">
+								<?php foreach ($homeCandidates as $candidate): ?>
+									<li><strong><?= htmlspecialchars($candidate['fullname'], ENT_QUOTES, 'UTF-8') ?></strong><span><?= htmlspecialchars($candidate['position_name'], ENT_QUOTES, 'UTF-8') ?></span></li>
+								<?php endforeach; ?>
+							</ul>
+						<?php else: ?>
+							<p>No candidates have been added to this election yet.</p>
+						<?php endif; ?>
+					<?php else: ?>
+						<p>Candidate information will be available when an election is announced.</p>
+					<?php endif; ?>
+				</div>
 				<a class="round-link" href="candidates.php" aria-label="View candidates"><i class="ti ti-arrow-up-right" aria-hidden="true"></i></a>
 			</article>
 			<article id="results">
 				<span class="info-icon"><i class="ti ti-chart-bar" aria-hidden="true"></i></span>
-				<div><p class="eyebrow">ELECTION OUTCOME</p><h2>Results and updates</h2><p>Official results will be posted after voting closes.</p></div>
-				<span class="results-status">UPDATES AFTER POLLS</span>
+				<div><p class="eyebrow">ELECTION OUTCOME</p><h2>Results and updates</h2><p>Candidate names are shown during voting. Vote totals become public after the election ends.</p></div>
+				<a class="round-link" href="results.php" aria-label="View election results"><i class="ti ti-arrow-up-right" aria-hidden="true"></i></a>
 			</article>
 		</section>
 

@@ -67,14 +67,11 @@ CREATE TABLE `candidates` (
   `candidate_id` int(10) UNSIGNED NOT NULL,
   `election_id` int(10) UNSIGNED NOT NULL,
   `position_id` int(10) UNSIGNED NOT NULL,
-  `party_id` int(10) UNSIGNED DEFAULT NULL,
   `fullname` varchar(100) NOT NULL,
   `student_id` varchar(30) DEFAULT NULL,
   `year_level` varchar(20) DEFAULT NULL,
   `course` varchar(100) DEFAULT NULL,
   `photo` varchar(255) DEFAULT NULL,
-  `biography` text DEFAULT NULL,
-  `platform` text DEFAULT NULL,
   `status` enum('active','inactive') NOT NULL DEFAULT 'active',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -94,19 +91,6 @@ CREATE TABLE `elections` (
   `status` enum('draft','scheduled','ongoing','ended') NOT NULL DEFAULT 'draft',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `parties`
---
-
-CREATE TABLE `parties` (
-  `party_id` int(10) UNSIGNED NOT NULL,
-  `party_name` varchar(100) NOT NULL,
-  `description` text DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -190,7 +174,6 @@ ALTER TABLE `activity_logs`
 --
 ALTER TABLE `candidates`
   ADD PRIMARY KEY (`candidate_id`),
-  ADD KEY `fk_candidate_party` (`party_id`),
   ADD KEY `idx_candidates_election` (`election_id`),
   ADD KEY `idx_candidates_position` (`position_id`);
 
@@ -199,13 +182,6 @@ ALTER TABLE `candidates`
 --
 ALTER TABLE `elections`
   ADD PRIMARY KEY (`election_id`);
-
---
--- Indexes for table `parties`
---
-ALTER TABLE `parties`
-  ADD PRIMARY KEY (`party_id`),
-  ADD UNIQUE KEY `party_name` (`party_name`);
 
 --
 -- Indexes for table `positions`
@@ -268,11 +244,6 @@ ALTER TABLE `elections`
   MODIFY `election_id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT for table `parties`
---
-ALTER TABLE `parties`
-  MODIFY `party_id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
-
 --
 -- AUTO_INCREMENT for table `positions`
 --
@@ -312,7 +283,6 @@ ALTER TABLE `activity_logs`
 --
 ALTER TABLE `candidates`
   ADD CONSTRAINT `fk_candidate_election` FOREIGN KEY (`election_id`) REFERENCES `elections` (`election_id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_candidate_party` FOREIGN KEY (`party_id`) REFERENCES `parties` (`party_id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_candidate_position` FOREIGN KEY (`position_id`) REFERENCES `positions` (`position_id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
